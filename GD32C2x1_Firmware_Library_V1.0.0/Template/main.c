@@ -1,105 +1,155 @@
-/*!
-    \file    main.c
-    \brief   led spark with systick, USART print and key example
-
-    \version 2025-05-30, V0.1.1, firmware for gd32c2x1
-*/
-
-/*
-    Copyright (c) 2025, GigaDevice Semiconductor Inc.
-
-    Redistribution and use in source and binary forms, with or without modification,
-are permitted provided that the following conditions are met:
-
-    1. Redistributions of source code must retain the above copyright notice, this
-       list of conditions and the following disclaimer.
-    2. Redistributions in binary form must reproduce the above copyright notice,
-       this list of conditions and the following disclaimer in the documentation
-       and/or other materials provided with the distribution.
-    3. Neither the name of the copyright holder nor the names of its contributors
-       may be used to endorse or promote products derived from this software without
-       specific prior written permission.
-
-    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
-WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
-IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
-INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
-NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
-PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
-WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
-OF SUCH DAMAGE.
-*/
+/**
+ * @file main.c
+ * @brief 电容触摸传感器示例程序
+ * @version 1.0
+ * @date 2025-11-01
+ */
 
 #include "gd32c2x1.h"
 #include "systick.h"
-#include "main.h"
-#include "gd32c231c_eval.h"
+#include "cap_touch.h"
 
-/*!
-    \brief      toggle the led every 500ms
-    \param[in]  none
-    \param[out] none
-    \retval     none
-*/
-void led_spark(void)
-{
-    static __IO uint32_t timingdelaylocal = 0U;
+/* 触摸数据就绪回调函数 */
+void on_touch_data_ready(capture_data_t *data);
 
-    if(timingdelaylocal) {
+/* USART配置 */
+void usart_config(void);
 
-        if(timingdelaylocal < 500U) {
-            gd_eval_led_on(LED1);
-        } else {
-            gd_eval_led_off(LED1);
-        }
+/* USART发送函数 */
+void usart_send_byte(uint8_t data);
+void usart_send_buffer(uint8_t *buffer, uint16_t length);
 
-        timingdelaylocal--;
-    } else {
-        timingdelaylocal = 1000U;
-    }
-}
-
-/*!
-    \brief      main function
-    \param[in]  none
-    \param[out] none
-    \retval     none
-*/
-
+/**
+ * @brief 主函数
+ */
 int main(void)
 {
-#ifdef __FIRMWARE_VERSION_DEFINE
-    uint32_t fw_ver = 0;
-#endif
-    /* configure systick */
+    capture_data_t touch_data;
+    
+    /* 配置系统滴答定时器 */
     systick_config();
-    /* initilize the LEDs, USART and key */
-    gd_eval_led_init(LED1);
-    gd_eval_led_init(LED2);
-    gd_eval_com_init(EVAL_COM);
-    gd_eval_key_init(KEY_WAKEUP, KEY_MODE_GPIO);
-
-#ifdef __FIRMWARE_VERSION_DEFINE
-    fw_ver = gd32c2x1_firmware_version_get();
-    /* print firmware version */
-    printf("\r\nGD32C2X1 series firmware version: V%d.%d.%d", (uint8_t)(fw_ver >> 24), (uint8_t)(fw_ver >> 16), (uint8_t)(fw_ver >> 8));
-#endif /* __FIRMWARE_VERSION_DEFINE */
-
-    /* print out the clock frequency of system, AHB, APB1 and APB2 */
-    printf("\r\nCK_SYS is %d", rcu_clock_freq_get(CK_SYS));
-    printf("\r\nCK_AHB is %d", rcu_clock_freq_get(CK_AHB));
-    printf("\r\nCK_APB is %d", rcu_clock_freq_get(CK_APB));
-
-    while(1) {
-        if(RESET == gd_eval_key_state_get(KEY_WAKEUP)) {
-            delay_1ms(50);
-            if(RESET == gd_eval_key_state_get(KEY_WAKEUP)) {
-                gd_eval_led_toggle(LED2);
-            }
-            while(RESET == gd_eval_key_state_get(KEY_WAKEUP)) {
-            }
-        }
+    
+    /* 配置USART用于数据输出 */
+    usart_config();
+     
+    /* 初始化电容触摸模块 */
+    cap_touch_init();
+    
+    /* 注册数据就绪回调函数 */
+    cap_touch_register_data_ready_callback(on_touch_data_ready);
+    
+    while (1) {
+        /* 每秒通过PB6(USART0_TX)发送"1234"字符串 */
+        // usart_send_byte('1');
+        // usart_send_byte('2');
+        // usart_send_byte('3');
+        // usart_send_byte('4');
+        // usart_send_byte('\r');  /* 回车 */
+        // usart_send_byte('\n');  /* 换行 */
+        
+        /* 简单延时 (大约1秒，具体时间取决于系统时钟) */
+        // for(volatile uint32_t i = 0; i < 3000000; i++) {
+        //     __NOP();
+        // }
+        
+        /* 循环调用触摸检测处理函数 */
+        cap_touch_process();
     }
 }
+
+/**
+ * @brief 触摸数据就绪回调函数
+ * 
+ * 当所有通道数据采集完成时会自动调用此函数
+ */
+void on_touch_data_ready(capture_data_t *data)
+{
+    /* 发送数据包头 */
+    usart_send_byte(0xAA);
+    usart_send_byte(0x55);
+    
+    /* 发送触摸数据(每个通道4字节，小端格式) */
+    for(uint8_t i = 0; i < CAP_TOUCH_CHANNEL_COUNT; i++) {
+        usart_send_byte((data->values[i] >> 0) & 0xFF);   /* 低字节 */
+        usart_send_byte((data->values[i] >> 8) & 0xFF);
+        // usart_send_byte((data->values[i] >> 16) & 0xFF);
+        // usart_send_byte((data->values[i] >> 24) & 0xFF);  /* 高字节 */
+    }
+    
+    /* 发送数据包尾 */
+    usart_send_byte(0x0D);  /* CR */
+    usart_send_byte(0x0A);  /* LF */
+}
+
+/**
+ * @brief 配置USART
+ */
+void usart_config(void)
+{
+    /* 先禁用NVIC中的USART0唤醒中断 */
+    nvic_irq_disable(USART0_WKUP_IRQn);
+    
+    /* 使能USART时钟 */
+    rcu_periph_clock_enable(RCU_GPIOB);
+    rcu_periph_clock_enable(RCU_USART0);
+    
+    /* 配置PB6为USART0_TX */
+    gpio_af_set(GPIOB, GPIO_AF_0, GPIO_PIN_6);  /* USART0_TX */
+    
+    /* 配置USART TX GPIO */
+    gpio_mode_set(GPIOB, GPIO_MODE_AF, GPIO_PUPD_PULLUP, GPIO_PIN_6);
+    gpio_output_options_set(GPIOB, GPIO_OTYPE_PP, GPIO_OSPEED_LEVEL_1, GPIO_PIN_6);
+    
+    /* 配置USART参数 */
+    usart_deinit(USART0);
+    
+    /* 禁用所有USART中断 */
+    usart_interrupt_disable(USART0, USART_INT_WU);
+    usart_interrupt_disable(USART0, USART_INT_IDLE);
+    usart_interrupt_disable(USART0, USART_INT_RBNE);
+    usart_interrupt_disable(USART0, USART_INT_TC);
+    usart_interrupt_disable(USART0, USART_INT_TBE);
+    
+    /* 清除所有中断标志 */
+    USART_INTC(USART0) = 0xFFFFFFFF;
+    
+    usart_baudrate_set(USART0, 115200U);
+    usart_word_length_set(USART0, USART_WL_8BIT);
+    usart_stop_bit_set(USART0, USART_STB_1BIT);
+    usart_parity_config(USART0, USART_PM_NONE);
+    usart_hardware_flow_rts_config(USART0, USART_RTS_DISABLE);
+    usart_hardware_flow_cts_config(USART0, USART_CTS_DISABLE);
+    usart_receive_config(USART0, USART_RECEIVE_DISABLE);  /* 不需要接收 */
+    usart_transmit_config(USART0, USART_TRANSMIT_ENABLE);
+    
+    /* 禁用唤醒功能 */
+    usart_wakeup_disable(USART0);
+    
+    /* 启用USART */
+    usart_enable(USART0);
+    
+    /* 再次清除所有中断标志 */
+    USART_INTC(USART0) = 0xFFFFFFFF;
+}
+
+/**
+ * @brief 通过USART0发送一个字节
+ */
+void usart_send_byte(uint8_t data)
+{
+    usart_data_transmit(USART0, data);
+    while(RESET == usart_flag_get(USART0, USART_FLAG_TBE));
+}
+
+/**
+ * @brief 通过USART0发送数据缓冲区
+ */
+void usart_send_buffer(uint8_t *buffer, uint16_t length)
+{
+    for(uint16_t i = 0; i < length; i++) {
+        usart_send_byte(buffer[i]);
+    }
+}
+
+/* Note: fputc is defined in gd32c231c_eval.c */
+

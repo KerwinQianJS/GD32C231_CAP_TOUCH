@@ -2,11 +2,11 @@
     \file    gd32c2x1_libopt.h
     \brief   library optional for gd32c2x1
 
-    \version 2024-09-25, V0.1.1, firmware for gd32c2x1
+    \version 2025-05-30, V1.0.0, firmware for gd32c2x1
 */
 
 /*
-    Copyright (c) 2024, GigaDevice Semiconductor Inc.
+    Copyright (c) 2025, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification,
 are permitted provided that the following conditions are met:

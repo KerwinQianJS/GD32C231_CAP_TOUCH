@@ -2,11 +2,11 @@
     \file    gd32c2x1_it.h
     \brief   the header file of the ISR
 
-    \version 2024-09-25, V0.1.1, firmware for gd32c2x1
+    \version 2025-05-30, V1.0.0, firmware for gd32c2x1
 */
 
 /*
-    Copyright (c) 2024, GigaDevice Semiconductor Inc.
+    Copyright (c) 2025, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification,
 are permitted provided that the following conditions are met:
@@ -48,5 +48,11 @@ void SVC_Handler(void);
 void PendSV_Handler(void);
 /* this function handles SysTick exception */
 void SysTick_Handler(void);
+/* this function handles USART0 wakeup interrupt */
+void USART0_WKUP_IRQHandler(void);
+/* this function handles TIMER0 channel interrupt */
+void TIMER0_Channel_IRQHandler(void);
+/* this function handles TIMER2 interrupt */
+void TIMER2_IRQHandler(void);
 
 #endif /* GD32C2X1_IT_H */

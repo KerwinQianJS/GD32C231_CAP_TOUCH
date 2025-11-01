@@ -13,7 +13,7 @@
 #include <stdint.h>
 
 /** 触摸通道数量定义 */
-#define CAP_TOUCH_CHANNEL_COUNT 6
+#define CAP_TOUCH_CHANNEL_COUNT 6  /* 启用6个通道 */
 
 /** 返回值定义 */
 typedef enum {

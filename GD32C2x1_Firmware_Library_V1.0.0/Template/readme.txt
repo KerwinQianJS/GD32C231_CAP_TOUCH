@@ -1,12 +1,12 @@
 /*!
     \file    readme.txt
-    \brief   description of led spark with systick, USART print and key example
+    \brief   keyboard polling mode
 
-    \version 2024-09-25, V0.1.1, firmware for gd32c2x1
+    \version 2025-05-30, V1.0.0, firmware for gd32c2x1
 */
 
 /*
-    Copyright (c) 2024, GigaDevice Semiconductor Inc.
+    Copyright (c) 2025, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -32,7 +32,9 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSI
 OF SUCH DAMAGE.
 */
 
-  This example is based on the GD32C231C-EVAL-V1.0 board, it provides a
-description of SysTick configuration, use of EVAL_COM and key. 
+  This example is based on the GD32C231C-EVAL-V1.0 board,it provides
+a description of how to use Wakeup key to control the LED2. The example uses polling mode.
+  Press the key, LED2 will be on. Press the Key again, LED2 will be off.
 
- 
+  On the GD32C231C-EVAL-V1.0 board, the Wakeup key connected to PA0 and
+the LED2 connected to PD1/PB3.

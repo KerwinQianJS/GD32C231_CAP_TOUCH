@@ -22,7 +22,7 @@
 #define TOUCH_DATA_FIFO_SIZE (4 * 1024)
 
 /** 放电时间(单位:主循环调用次数) */
-#define DISCHARGE_CYCLES 2
+#define DISCHARGE_CYCLES 10
 
 /** 捕获超时时间(定时器计数值) */
 #define CAPTURE_TIMEOUT 0xFFFF
@@ -69,88 +69,89 @@ typedef struct {
  * @brief 触摸板数组配置
  * 
  * 配置说明:
- * - 使用TIMER2的4个通道: CH0(PB4), CH1(PB5), CH2(PB0), CH3(PB1)
- * - 使用TIMER0的2个通道: CH0(PA8), CH1(PA9)
+ * - 使用TIMER0的4个通道: CH0(PA0), CH1(PA1), CH2(PA2), CH3(PA3)
+ * - 使用TIMER15单通道: CH0(PA6)
+ * - 使用TIMER16单通道: CH0(PA7)
  * 
  * 引脚分配:
- * Channel 0: PB4  - TIMER2_CH0
- * Channel 1: PB5  - TIMER2_CH1
- * Channel 2: PB0  - TIMER2_CH2
- * Channel 3: PB1  - TIMER2_CH3
- * Channel 4: PA8  - TIMER0_CH0
- * Channel 5: PA9  - TIMER0_CH1
+ * Channel 0: PA0  - TIMER0_CH0  (AF2) - TOUCH_IN1
+ * Channel 1: PA1  - TIMER0_CH1  (AF2) - TOUCH_IN2
+ * Channel 2: PA2  - TIMER0_CH2  (AF2) - TOUCH_IN3
+ * Channel 3: PA3  - TIMER0_CH3  (AF2) - TOUCH_IN4
+ * Channel 4: PA6  - TIMER15_CH0 (AF5) - TOUCH_IN5
+ * Channel 5: PA7  - TIMER16_CH0 (AF5) - TOUCH_IN6
  */
 cap_touch_pad_t g_touch_pads[CAP_TOUCH_CHANNEL_COUNT] = {
     [0] = {
-        .gpio_pin       = GPIO_PIN_4,
-        .gpio_port      = GPIOB,
-        .rcu_gpio       = RCU_GPIOB,
-        .timer          = TIMER2,
-        .rcu_timer      = RCU_TIMER2,
+        .gpio_pin       = GPIO_PIN_0,
+        .gpio_port      = GPIOA,
+        .rcu_gpio       = RCU_GPIOA,
+        .timer          = TIMER0,
+        .rcu_timer      = RCU_TIMER0,
         .timer_channel  = TIMER_CH_0,
         .timer_int_flag = TIMER_INT_FLAG_CH0,
-        .timer_irq      = TIMER2_IRQn,
-        .gpio_af        = GPIO_AF_1,
+        .timer_irq      = TIMER0_Channel_IRQn,
+        .gpio_af        = GPIO_AF_2,
         .state          = CAP_STATE_INIT
     },
     [1] = {
-        .gpio_pin       = GPIO_PIN_5,
-        .gpio_port      = GPIOB,
-        .rcu_gpio       = RCU_GPIOB,
-        .timer          = TIMER2,
-        .rcu_timer      = RCU_TIMER2,
+        .gpio_pin       = GPIO_PIN_1,
+        .gpio_port      = GPIOA,
+        .rcu_gpio       = RCU_GPIOA,
+        .timer          = TIMER0,
+        .rcu_timer      = RCU_TIMER0,
         .timer_channel  = TIMER_CH_1,
         .timer_int_flag = TIMER_INT_FLAG_CH1,
-        .timer_irq      = TIMER2_IRQn,
-        .gpio_af        = GPIO_AF_1,
+        .timer_irq      = TIMER0_Channel_IRQn,
+        .gpio_af        = GPIO_AF_2,
         .state          = CAP_STATE_INIT
     },
     [2] = {
-        .gpio_pin       = GPIO_PIN_0,
-        .gpio_port      = GPIOB,
-        .rcu_gpio       = RCU_GPIOB,
-        .timer          = TIMER2,
-        .rcu_timer      = RCU_TIMER2,
+        .gpio_pin       = GPIO_PIN_2,
+        .gpio_port      = GPIOA,
+        .rcu_gpio       = RCU_GPIOA,
+        .timer          = TIMER0,
+        .rcu_timer      = RCU_TIMER0,
         .timer_channel  = TIMER_CH_2,
         .timer_int_flag = TIMER_INT_FLAG_CH2,
-        .timer_irq      = TIMER2_IRQn,
-        .gpio_af        = GPIO_AF_1,
+        .timer_irq      = TIMER0_Channel_IRQn,
+        .gpio_af        = GPIO_AF_2,
         .state          = CAP_STATE_INIT
     },
     [3] = {
-        .gpio_pin       = GPIO_PIN_1,
-        .gpio_port      = GPIOB,
-        .rcu_gpio       = RCU_GPIOB,
-        .timer          = TIMER2,
-        .rcu_timer      = RCU_TIMER2,
+        .gpio_pin       = GPIO_PIN_3,
+        .gpio_port      = GPIOA,
+        .rcu_gpio       = RCU_GPIOA,
+        .timer          = TIMER0,
+        .rcu_timer      = RCU_TIMER0,
         .timer_channel  = TIMER_CH_3,
         .timer_int_flag = TIMER_INT_FLAG_CH3,
-        .timer_irq      = TIMER2_IRQn,
-        .gpio_af        = GPIO_AF_1,
+        .timer_irq      = TIMER0_Channel_IRQn,
+        .gpio_af        = GPIO_AF_2,
         .state          = CAP_STATE_INIT
     },
     [4] = {
-        .gpio_pin       = GPIO_PIN_8,
+        .gpio_pin       = GPIO_PIN_6,
         .gpio_port      = GPIOA,
         .rcu_gpio       = RCU_GPIOA,
-        .timer          = TIMER0,
-        .rcu_timer      = RCU_TIMER0,
+        .timer          = TIMER15,
+        .rcu_timer      = RCU_TIMER15,
         .timer_channel  = TIMER_CH_0,
         .timer_int_flag = TIMER_INT_FLAG_CH0,
-        .timer_irq      = TIMER0_BRK_UP_TRG_COM_IRQn,
-        .gpio_af        = GPIO_AF_2,
+        .timer_irq      = TIMER15_IRQn,
+        .gpio_af        = GPIO_AF_5,
         .state          = CAP_STATE_INIT
     },
     [5] = {
-        .gpio_pin       = GPIO_PIN_9,
+        .gpio_pin       = GPIO_PIN_7,
         .gpio_port      = GPIOA,
         .rcu_gpio       = RCU_GPIOA,
-        .timer          = TIMER0,
-        .rcu_timer      = RCU_TIMER0,
-        .timer_channel  = TIMER_CH_1,
-        .timer_int_flag = TIMER_INT_FLAG_CH1,
-        .timer_irq      = TIMER0_BRK_UP_TRG_COM_IRQn,
-        .gpio_af        = GPIO_AF_2,
+        .timer          = TIMER16,
+        .rcu_timer      = RCU_TIMER16,
+        .timer_channel  = TIMER_CH_0,
+        .timer_int_flag = TIMER_INT_FLAG_CH0,
+        .timer_irq      = TIMER16_IRQn,
+        .gpio_af        = GPIO_AF_5,
         .state          = CAP_STATE_INIT
     }
 };
@@ -159,7 +160,7 @@ cap_touch_pad_t g_touch_pads[CAP_TOUCH_CHANNEL_COUNT] = {
 static uint8_t g_current_channel = 0;
 
 /** 触摸数据实例 */
-static capture_data_t g_touch_data = {.values = {0}, .timestamp = 0};
+capture_data_t g_touch_data = {.values = {0}, .timestamp = 0};
 
 /** 触摸数据FIFO */
 static simple_fifo_t g_touch_fifo;
@@ -281,26 +282,29 @@ static void cap_touch_pad_start_capture(cap_touch_pad_t *touch_pad)
 {
     timer_ic_parameter_struct timer_icinitpara;
     
-    /* 清除定时器计数器 */
-    timer_counter_value_config(touch_pad->timer, 0);
-    
-    /* 清除中断标志 */
-    timer_interrupt_flag_clear(touch_pad->timer, touch_pad->timer_int_flag);
-    
-    /* 配置GPIO为定时器输入捕获模式 */
-    gpio_mode_set(touch_pad->gpio_port, GPIO_MODE_AF, GPIO_PUPD_PULLUP, touch_pad->gpio_pin);
-    gpio_output_options_set(touch_pad->gpio_port, GPIO_OTYPE_PP, GPIO_OSPEED_LEVEL_1, touch_pad->gpio_pin);
-    gpio_af_set(touch_pad->gpio_port, touch_pad->gpio_af, touch_pad->gpio_pin);
-    
-    /* 配置定时器输入捕获参数 */
+    /* 1. 先配置定时器输入捕获参数 */
     timer_icinitpara.icpolarity  = TIMER_IC_POLARITY_RISING;
     timer_icinitpara.icselection = TIMER_IC_SELECTION_DIRECTTI;
     timer_icinitpara.icprescaler = TIMER_IC_PSC_DIV1;
     timer_icinitpara.icfilter    = 0x00;
     timer_input_capture_config(touch_pad->timer, touch_pad->timer_channel, &timer_icinitpara);
     
-    /* 使能定时器通道中断 */
+    /* 2. 清除定时器计数器 */
+    timer_counter_value_config(touch_pad->timer, 0);
+    
+    /* 3. 清除中断标志 */
+    timer_interrupt_flag_clear(touch_pad->timer, touch_pad->timer_int_flag);
+    
+    /* 4. 使能定时器通道中断 */
     timer_interrupt_enable(touch_pad->timer, touch_pad->timer_int_flag);
+    
+    /* 5. 使能定时器输入捕获通道 */
+    timer_channel_output_state_config(touch_pad->timer, touch_pad->timer_channel, TIMER_CCX_ENABLE);
+    
+    /* 6. 最后配置GPIO（此时定时器已准备好捕获上升沿）*/
+    gpio_mode_set(touch_pad->gpio_port, GPIO_MODE_AF, GPIO_PUPD_PULLUP, touch_pad->gpio_pin);
+    gpio_output_options_set(touch_pad->gpio_port, GPIO_OTYPE_PP, GPIO_OSPEED_LEVEL_1, touch_pad->gpio_pin);
+    gpio_af_set(touch_pad->gpio_port, touch_pad->gpio_af, touch_pad->gpio_pin);
     
     /* 进入等待捕获状态 */
     touch_pad->state = CAP_STATE_WAIT_CAPTURE;
@@ -347,6 +351,9 @@ void cap_touch_timer_capture_callback(uint32_t timer_periph, uint16_t channel)
         /* 读取捕获值 */
         g_touch_data.values[i] = timer_channel_capture_value_register_read(timer_periph, channel);
         
+        /* 禁用定时器输入捕获通道 */
+        timer_channel_output_state_config(timer_periph, channel, TIMER_CCX_DISABLE);
+        
         /* 禁用中断 */
         timer_interrupt_disable(timer_periph, g_touch_pads[i].timer_int_flag);
         
@@ -376,8 +383,9 @@ static cap_bool_t cap_touch_process_pad(cap_touch_pad_t *touch_pad)
         /* 检查是否超时 */
         if (timer_counter_read(touch_pad->timer) >= CAPTURE_TIMEOUT) {
             /* 超时处理 */
+            timer_channel_output_state_config(touch_pad->timer, touch_pad->timer_channel, TIMER_CCX_DISABLE);
             timer_interrupt_disable(touch_pad->timer, touch_pad->timer_int_flag);
-            g_touch_data.values[g_current_channel] = CAPTURE_TIMEOUT;
+            //g_touch_data.values[g_current_channel] = CAPTURE_TIMEOUT;
             cap_touch_pad_init(touch_pad);
             cap_touch_scan_next();
         }
@@ -410,7 +418,7 @@ static void timer_config(uint32_t timer_periph)
     timer_deinit(timer_periph);
     
     /* 配置定时器基本参数 */
-    timer_initpara.prescaler        = 47;  /* 48MHz / 48 = 1MHz */
+    timer_initpara.prescaler        = 5;  /* 48MHz / 6 = 8MHz，每计数0.125us */
     timer_initpara.alignedmode      = TIMER_COUNTER_EDGE;
     timer_initpara.counterdirection = TIMER_COUNTER_UP;
     timer_initpara.period           = 0xFFFF;
@@ -434,14 +442,20 @@ void cap_touch_init(void)
     /* 使能定时器时钟 */
     rcu_periph_clock_enable(RCU_TIMER0);
     rcu_periph_clock_enable(RCU_TIMER2);
+    rcu_periph_clock_enable(RCU_TIMER15);
+    rcu_periph_clock_enable(RCU_TIMER16);
     
     /* 配置定时器 */
     timer_config(TIMER0);
     timer_config(TIMER2);
+    timer_config(TIMER15);
+    timer_config(TIMER16);
     
     /* 配置NVIC */
-    nvic_irq_enable(TIMER0_BRK_UP_TRG_COM_IRQn, 2);
+    nvic_irq_enable(TIMER0_Channel_IRQn, 2);
     nvic_irq_enable(TIMER2_IRQn, 2);
+    nvic_irq_enable(TIMER15_IRQn, 2);
+    nvic_irq_enable(TIMER16_IRQn, 2);
     
     /* 初始化FIFO */
     fifo_init(&g_touch_fifo, g_touch_fifo_buffer, TOUCH_DATA_FIFO_SIZE);
@@ -522,44 +536,4 @@ void cap_touch_systick_handler(void)
     g_system_us += 1000;
 }
 
-/**
- * @brief TIMER0中断处理函数
- */
-void TIMER0_BRK_UP_TRG_COM_IRQHandler(void)
-{
-    if (SET == timer_interrupt_flag_get(TIMER0, TIMER_INT_FLAG_CH0)) {
-        timer_interrupt_flag_clear(TIMER0, TIMER_INT_FLAG_CH0);
-        cap_touch_timer_capture_callback(TIMER0, TIMER_CH_0);
-    }
-    
-    if (SET == timer_interrupt_flag_get(TIMER0, TIMER_INT_FLAG_CH1)) {
-        timer_interrupt_flag_clear(TIMER0, TIMER_INT_FLAG_CH1);
-        cap_touch_timer_capture_callback(TIMER0, TIMER_CH_1);
-    }
-}
 
-/**
- * @brief TIMER2中断处理函数
- */
-void TIMER2_IRQHandler(void)
-{
-    if (SET == timer_interrupt_flag_get(TIMER2, TIMER_INT_FLAG_CH0)) {
-        timer_interrupt_flag_clear(TIMER2, TIMER_INT_FLAG_CH0);
-        cap_touch_timer_capture_callback(TIMER2, TIMER_CH_0);
-    }
-    
-    if (SET == timer_interrupt_flag_get(TIMER2, TIMER_INT_FLAG_CH1)) {
-        timer_interrupt_flag_clear(TIMER2, TIMER_INT_FLAG_CH1);
-        cap_touch_timer_capture_callback(TIMER2, TIMER_CH_1);
-    }
-    
-    if (SET == timer_interrupt_flag_get(TIMER2, TIMER_INT_FLAG_CH2)) {
-        timer_interrupt_flag_clear(TIMER2, TIMER_INT_FLAG_CH2);
-        cap_touch_timer_capture_callback(TIMER2, TIMER_CH_2);
-    }
-    
-    if (SET == timer_interrupt_flag_get(TIMER2, TIMER_INT_FLAG_CH3)) {
-        timer_interrupt_flag_clear(TIMER2, TIMER_INT_FLAG_CH3);
-        cap_touch_timer_capture_callback(TIMER2, TIMER_CH_3);
-    }
-}
