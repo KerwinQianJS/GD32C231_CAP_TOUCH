@@ -22,10 +22,16 @@
 #define TOUCH_DATA_FIFO_SIZE (4 * 1024)
 
 /** 放电时间(单位:主循环调用次数) */
-#define DISCHARGE_CYCLES 10
+#define DISCHARGE_CYCLES 0  /* 改为0，GPIO输出低电平后立即开始捕获 */
 
-/** 捕获超时时间(定时器计数值) */
-#define CAPTURE_TIMEOUT 0xFFFF
+/** 捕获超时时间(定时器计数值) 
+ * 8MHz定时器，每计数0.125us
+ * 0xFFFF(65535) = 8.2ms - 太长！
+ * 0x3FFF(16383) = 2.0ms - 推荐（更稳定）
+ * 0x1FFF(8191)  = 1.0ms - 较快
+ * 0x0FFF(4095)  = 0.5ms - 最快但可能不稳定
+ */
+#define CAPTURE_TIMEOUT 0x3FFF  /* 2ms超时，平衡速度和稳定性 */
 
 /**
  * @brief 触摸传感器状态枚举
@@ -276,6 +282,26 @@ static void cap_touch_pad_discharge(cap_touch_pad_t *touch_pad)
 }
 
 /**
+ * @brief 快速放电（立即切换到捕获状态）
+ * 用于提高检测频率
+ */
+static void cap_touch_pad_fast_discharge(cap_touch_pad_t *touch_pad)
+{
+    /* 配置GPIO为输出模式，输出低电平进行快速放电 */
+    gpio_mode_set(touch_pad->gpio_port, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, touch_pad->gpio_pin);
+    gpio_output_options_set(touch_pad->gpio_port, GPIO_OTYPE_PP, GPIO_OSPEED_LEVEL_1, touch_pad->gpio_pin);
+    gpio_bit_write(touch_pad->gpio_port, touch_pad->gpio_pin, RESET);
+    
+    /* 增加几个NOP延迟，确保电容有足够时间放电 */
+    for(volatile uint8_t i = 0; i < 10; i++) {
+        __NOP();
+    }
+    
+    /* 开始捕获 */
+    cap_touch_pad_start_capture(touch_pad);
+}
+
+/**
  * @brief 启动定时器输入捕获
  */
 static void cap_touch_pad_start_capture(cap_touch_pad_t *touch_pad)
@@ -357,8 +383,13 @@ void cap_touch_timer_capture_callback(uint32_t timer_periph, uint16_t channel)
         /* 禁用中断 */
         timer_interrupt_disable(timer_periph, g_touch_pads[i].timer_int_flag);
         
-        /* 回到初始状态 */
-        cap_touch_pad_init(&g_touch_pads[i]);
+        /* ⚠️ 关键修复：先将当前通道GPIO切换为输出低电平进行放电 */
+        gpio_mode_set(g_touch_pads[i].gpio_port, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, g_touch_pads[i].gpio_pin);
+        gpio_output_options_set(g_touch_pads[i].gpio_port, GPIO_OTYPE_PP, GPIO_OSPEED_LEVEL_1, g_touch_pads[i].gpio_pin);
+        gpio_bit_write(g_touch_pads[i].gpio_port, g_touch_pads[i].gpio_pin, RESET);
+        
+        /* 标记当前通道回到初始状态 */
+        g_touch_pads[i].state = CAP_STATE_INIT;
         
         /* 扫描下一个通道 */
         cap_touch_scan_next();
@@ -366,27 +397,43 @@ void cap_touch_timer_capture_callback(uint32_t timer_periph, uint16_t channel)
 }
 
 /**
- * @brief 处理单个触摸传感器的状态机
+ * @brief 处理单个触摸传感器的状态机（优化版）
  */
 static cap_bool_t cap_touch_process_pad(cap_touch_pad_t *touch_pad)
 {
     switch (touch_pad->state) {
     case CAP_STATE_INIT:
-        cap_touch_pad_init(touch_pad);
+        /* 使用快速放电模式，直接从INIT跳到WAIT_CAPTURE */
+        cap_touch_pad_fast_discharge(touch_pad);
         return CAP_TRUE;
         
     case CAP_STATE_DISCHARGE:
+        /* 这个状态在快速模式下不再使用 */
         cap_touch_pad_discharge(touch_pad);
         return CAP_FALSE;
         
     case CAP_STATE_WAIT_CAPTURE:
-        /* 检查是否超时 */
+        /* 检查是否超时（降低检查频率以减少CPU占用） */
         if (timer_counter_read(touch_pad->timer) >= CAPTURE_TIMEOUT) {
             /* 超时处理 */
             timer_channel_output_state_config(touch_pad->timer, touch_pad->timer_channel, TIMER_CCX_DISABLE);
             timer_interrupt_disable(touch_pad->timer, touch_pad->timer_int_flag);
-            //g_touch_data.values[g_current_channel] = CAPTURE_TIMEOUT;
-            cap_touch_pad_init(touch_pad);
+            
+            /* 保持上一次的有效值，避免显示0 */
+            if (g_touch_data.values[g_current_channel] == 0) {
+                g_touch_data.values[g_current_channel] = CAPTURE_TIMEOUT;  /* 第一次超时设为最大值 */
+            }
+            /* 否则保持上次的值不变 */
+            
+            /* ⚠️ 关键修复：超时后也要将GPIO切换为输出低电平 */
+            gpio_mode_set(touch_pad->gpio_port, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, touch_pad->gpio_pin);
+            gpio_output_options_set(touch_pad->gpio_port, GPIO_OTYPE_PP, GPIO_OSPEED_LEVEL_1, touch_pad->gpio_pin);
+            gpio_bit_write(touch_pad->gpio_port, touch_pad->gpio_pin, RESET);
+            
+            /* 标记为初始状态 */
+            touch_pad->state = CAP_STATE_INIT;
+            
+            /* 切换到下一个通道 */
             cap_touch_scan_next();
         }
         return CAP_FALSE;
@@ -536,4 +583,62 @@ void cap_touch_systick_handler(void)
     g_system_us += 1000;
 }
 
+/**
+ * @brief GPIO指示引脚映射表
+ * 
+ * 6个通道对应PB0-PB5
+ */
+static const uint32_t g_indicator_pins[6] = {
+    GPIO_PIN_0,  /* Channel 0 -> PB0 */
+    GPIO_PIN_1,  /* Channel 1 -> PB1 */
+    GPIO_PIN_2,  /* Channel 2 -> PB2 */
+    GPIO_PIN_3,  /* Channel 3 -> PB3 */
+    GPIO_PIN_4,  /* Channel 4 -> PB4 */
+    GPIO_PIN_5   /* Channel 5 -> PB5 */
+};
+
+/**
+ * @brief 初始化触摸指示GPIO
+ * 
+ * 配置PB0-PB5为推挽输出，初始为低电平
+ */
+void cap_touch_gpio_indicator_init(void)
+{
+    /* 使能GPIOB时钟 */
+    rcu_periph_clock_enable(RCU_GPIOB);
+    
+    /* 配置PB0-PB5为推挽输出模式 */
+    for (uint8_t i = 0; i < 6; i++) {
+        gpio_mode_set(GPIOB, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, g_indicator_pins[i]);
+        gpio_output_options_set(GPIOB, GPIO_OTYPE_PP, GPIO_OSPEED_LEVEL_1, g_indicator_pins[i]);
+        gpio_bit_write(GPIOB, g_indicator_pins[i], RESET);  /* 初始为低电平 */
+    }
+}
+
+/**
+ * @brief 更新触摸指示GPIO状态
+ * 
+ * @param channel 通道号(0-5)
+ * @param threshold 触摸检测阈值
+ */
+void cap_touch_update_gpio_indicator(uint8_t channel, uint32_t threshold)
+{
+    if (channel >= 6) {
+        return;
+    }
+    
+    /* 当触摸值超过阈值时，输出高电平 */
+    if (g_touch_data.values[channel] > threshold) {
+        gpio_bit_write(GPIOB, g_indicator_pins[channel], SET);
+    } else {
+        gpio_bit_write(GPIOB, g_indicator_pins[channel], RESET);
+    }
+}
+
+void cap_test_gpio_toggle(void)
+{
+    static uint8_t state = 0;
+    gpio_bit_write(GPIOB, g_indicator_pins[1], state);
+    state = !state;
+}
 

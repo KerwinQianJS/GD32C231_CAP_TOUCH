@@ -9,6 +9,9 @@
 #include "systick.h"
 #include "cap_touch.h"
 
+/* 触摸检测阈值 - 根据实际情况调整 */
+#define TOUCH_THRESHOLD 150  /* 触摸阈值，超过此值认为被触摸 */
+
 /* 触摸数据就绪回调函数 */
 void on_touch_data_ready(capture_data_t *data);
 
@@ -35,6 +38,9 @@ int main(void)
     /* 初始化电容触摸模块 */
     cap_touch_init();
     
+    /* 初始化触摸指示GPIO (PB0-PB5) */
+    cap_touch_gpio_indicator_init();
+    
     /* 注册数据就绪回调函数 */
     cap_touch_register_data_ready_callback(on_touch_data_ready);
     
@@ -57,6 +63,15 @@ int main(void)
     }
 }
 
+uint8_t sum_check(uint8_t *data, uint16_t len)
+{
+    uint32_t sum = 0;
+    for (uint16_t i = 0; i < len; i++) {
+        sum += data[i];
+    }
+    return sum & 0xFF; // 0x01 & oxff   0000 0001
+}
+
 /**
  * @brief 触摸数据就绪回调函数
  * 
@@ -64,21 +79,35 @@ int main(void)
  */
 void on_touch_data_ready(capture_data_t *data)
 {
-    /* 发送数据包头 */
-    usart_send_byte(0xAA);
-    usart_send_byte(0x55);
-    
-    /* 发送触摸数据(每个通道4字节，小端格式) */
+    /* 更新所有通道的GPIO指示状态 */
     for(uint8_t i = 0; i < CAP_TOUCH_CHANNEL_COUNT; i++) {
-        usart_send_byte((data->values[i] >> 0) & 0xFF);   /* 低字节 */
-        usart_send_byte((data->values[i] >> 8) & 0xFF);
-        // usart_send_byte((data->values[i] >> 16) & 0xFF);
-        // usart_send_byte((data->values[i] >> 24) & 0xFF);  /* 高字节 */
+        cap_touch_update_gpio_indicator(i, TOUCH_THRESHOLD);
     }
     
-    /* 发送数据包尾 */
-    usart_send_byte(0x0D);  /* CR */
-    usart_send_byte(0x0A);  /* LF */
+            // cap_test_gpio_toggle();
+            uint8_t send_buf[15] = {0};
+    /* 发送数据包头 */
+    // usart_send_byte(0xAA);
+    // usart_send_byte(0x55);
+    send_buf[0] = 0xAA;
+    send_buf[1] = 0x55;
+
+    send_buf[2] = (data->values[0] >> 0) & 0xFF;   /* 低字节 */
+    send_buf[3] = (data->values[0] >> 8) & 0xFF;   /* 高字节 */
+    send_buf[4] = (data->values[1] >> 0) & 0xFF;   /* 低字节 */
+    send_buf[5] = (data->values[1] >> 8) & 0xFF;   /* 高字节 */
+    send_buf[6] = (data->values[2] >> 0) & 0xFF;   /* 低字节 */
+    send_buf[7] = (data->values[2] >> 8) & 0xFF;   /* 高字节 */
+    send_buf[8] = (data->values[3] >> 0) & 0xFF;   /* 低字节 */
+    send_buf[9] = (data->values[3] >> 8) & 0xFF;   /* 高字节 */
+    send_buf[10] = (data->values[4] >> 0) & 0xFF;   /* 低字节 */
+    send_buf[11] = (data->values[4] >> 8) & 0xFF;   /* 高字节 */
+    send_buf[12] = (data->values[5] >> 0) & 0xFF;   /* 低字节 */
+    send_buf[13] = (data->values[5] >> 8) & 0xFF;   /* 高字节 */
+
+    send_buf[14] = sum_check(send_buf, 14);
+
+    usart_send_buffer(send_buf, 15);
 }
 
 /**

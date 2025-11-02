@@ -104,4 +104,39 @@ uint16_t cap_touch_fifo_get_count(void);
  */
 void cap_touch_fifo_clear(void);
 
+/**
+ * @brief SysTick中断处理函数 - 用于时间戳
+ * 应在systick中断中每1ms调用一次
+ */
+void cap_touch_systick_handler(void);
+
+/**
+ * @brief 初始化触摸指示GPIO (PB0-PB5)
+ * 
+ * 当检测到触摸时，对应的GPIO会输出高电平
+ */
+void cap_touch_gpio_indicator_init(void);
+
+/**
+ * @brief 更新触摸指示GPIO状态
+ * 
+ * @param channel 通道号(0-5)
+ * @param threshold 触摸检测阈值
+ * 
+ * 当通道值超过阈值时，对应GPIO输出高电平，否则输出低电平
+ */
+void cap_touch_update_gpio_indicator(uint8_t channel, uint32_t threshold);
+
+/**
+ * @brief 定时器输入捕获中断回调函数
+ * 
+ * @param timer_periph 定时器外设
+ * @param channel 定时器通道
+ * 
+ * 当定时器捕获到触摸板充电完成时调用此函数
+ * 需要在对应的定时器中断处理函数中调用
+ */
+void cap_touch_timer_capture_callback(uint32_t timer_periph, uint16_t channel);
+
+void cap_test_gpio_toggle(void);
 #endif /* CAP_TOUCH_H_ */
