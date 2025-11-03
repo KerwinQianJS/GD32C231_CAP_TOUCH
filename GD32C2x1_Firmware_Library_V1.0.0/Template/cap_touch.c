@@ -24,6 +24,8 @@
 /** 放电时间(单位:主循环调用次数) */
 #define DISCHARGE_CYCLES 0  /* 改为0，GPIO输出低电平后立即开始捕获 */
 
+#define DISCHARGE_TIME 200  /* 放电延时(单位:一个NOP) 500个NOP约10微秒 (48MHz系统时钟) */
+
 /** 捕获超时时间(定时器计数值) 
  * 8MHz定时器，每计数0.125us
  * 0xFFFF(65535) = 8.2ms - 太长！
@@ -260,7 +262,8 @@ static void cap_touch_pad_init(cap_touch_pad_t *touch_pad)
 {
     /* 配置GPIO为输出模式，输出低电平进行放电 */
     gpio_mode_set(touch_pad->gpio_port, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, touch_pad->gpio_pin);
-    gpio_output_options_set(touch_pad->gpio_port, GPIO_OTYPE_PP, GPIO_OSPEED_LEVEL_1, touch_pad->gpio_pin);
+    /* 使用最低速度，降低噪声 */
+    gpio_output_options_set(touch_pad->gpio_port, GPIO_OTYPE_PP, GPIO_OSPEED_LEVEL_0, touch_pad->gpio_pin);
     gpio_bit_write(touch_pad->gpio_port, touch_pad->gpio_pin, RESET);
     
     /* 进入放电状态 */
@@ -289,11 +292,18 @@ static void cap_touch_pad_fast_discharge(cap_touch_pad_t *touch_pad)
 {
     /* 配置GPIO为输出模式，输出低电平进行快速放电 */
     gpio_mode_set(touch_pad->gpio_port, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, touch_pad->gpio_pin);
-    gpio_output_options_set(touch_pad->gpio_port, GPIO_OTYPE_PP, GPIO_OSPEED_LEVEL_1, touch_pad->gpio_pin);
+    /* 降低GPIO输出速度，减少EMI和信号振荡
+     * LEVEL_0 = 2MHz   - 最低速度，最少噪声（推荐）
+     * LEVEL_1 = 10MHz  - 低速度
+     * LEVEL_2 = 50MHz  - 高速度
+     */
+    gpio_output_options_set(touch_pad->gpio_port, GPIO_OTYPE_PP, GPIO_OSPEED_LEVEL_0, touch_pad->gpio_pin);
     gpio_bit_write(touch_pad->gpio_port, touch_pad->gpio_pin, RESET);
     
-    /* 增加几个NOP延迟，确保电容有足够时间放电 */
-    for(volatile uint8_t i = 0; i < 10; i++) {
+    /* 增加放电延迟，确保电容完全放电，减少残留电荷导致的噪声
+     * 100个NOP约2微秒 (48MHz系统时钟)
+     */
+    for(volatile uint8_t i = 0; i < DISCHARGE_TIME; i++) {
         __NOP();
     }
     
@@ -312,7 +322,14 @@ static void cap_touch_pad_start_capture(cap_touch_pad_t *touch_pad)
     timer_icinitpara.icpolarity  = TIMER_IC_POLARITY_RISING;
     timer_icinitpara.icselection = TIMER_IC_SELECTION_DIRECTTI;
     timer_icinitpara.icprescaler = TIMER_IC_PSC_DIV1;
-    timer_icinitpara.icfilter    = 0x00;
+    /* 硬件数字滤波：0x05表示需要5个连续采样点一致才认为信号有效
+     * 采样频率 = 定时器时钟频率 / (prescaler * filter)
+     * 0x00 = 无滤波
+     * 0x01-0x03 = 轻度滤波（推荐用于低噪声环境）
+     * 0x04-0x07 = 中度滤波（推荐用于中等噪声环境）
+     * 0x08-0x0F = 强滤波（用于高噪声环境，会略微降低响应速度）
+     */
+    timer_icinitpara.icfilter    = 0x05;  /* 硬件滤波，过滤掉毛刺 */
     timer_input_capture_config(touch_pad->timer, touch_pad->timer_channel, &timer_icinitpara);
     
     /* 2. 清除定时器计数器 */
@@ -328,8 +345,9 @@ static void cap_touch_pad_start_capture(cap_touch_pad_t *touch_pad)
     timer_channel_output_state_config(touch_pad->timer, touch_pad->timer_channel, TIMER_CCX_ENABLE);
     
     /* 6. 最后配置GPIO（此时定时器已准备好捕获上升沿）*/
-    gpio_mode_set(touch_pad->gpio_port, GPIO_MODE_AF, GPIO_PUPD_PULLUP, touch_pad->gpio_pin);
-    gpio_output_options_set(touch_pad->gpio_port, GPIO_OTYPE_PP, GPIO_OSPEED_LEVEL_1, touch_pad->gpio_pin);
+    gpio_mode_set(touch_pad->gpio_port, GPIO_MODE_AF, GPIO_PUPD_NONE, touch_pad->gpio_pin);
+    /* 降低GPIO速度，减少高频噪声耦合 */
+    gpio_output_options_set(touch_pad->gpio_port, GPIO_OTYPE_PP, GPIO_OSPEED_LEVEL_0, touch_pad->gpio_pin);
     gpio_af_set(touch_pad->gpio_port, touch_pad->gpio_af, touch_pad->gpio_pin);
     
     /* 进入等待捕获状态 */
@@ -385,7 +403,7 @@ void cap_touch_timer_capture_callback(uint32_t timer_periph, uint16_t channel)
         
         /* ⚠️ 关键修复：先将当前通道GPIO切换为输出低电平进行放电 */
         gpio_mode_set(g_touch_pads[i].gpio_port, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, g_touch_pads[i].gpio_pin);
-        gpio_output_options_set(g_touch_pads[i].gpio_port, GPIO_OTYPE_PP, GPIO_OSPEED_LEVEL_1, g_touch_pads[i].gpio_pin);
+        gpio_output_options_set(g_touch_pads[i].gpio_port, GPIO_OTYPE_PP, GPIO_OSPEED_LEVEL_0, g_touch_pads[i].gpio_pin);
         gpio_bit_write(g_touch_pads[i].gpio_port, g_touch_pads[i].gpio_pin, RESET);
         
         /* 标记当前通道回到初始状态 */
@@ -427,7 +445,7 @@ static cap_bool_t cap_touch_process_pad(cap_touch_pad_t *touch_pad)
             
             /* ⚠️ 关键修复：超时后也要将GPIO切换为输出低电平 */
             gpio_mode_set(touch_pad->gpio_port, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, touch_pad->gpio_pin);
-            gpio_output_options_set(touch_pad->gpio_port, GPIO_OTYPE_PP, GPIO_OSPEED_LEVEL_1, touch_pad->gpio_pin);
+            gpio_output_options_set(touch_pad->gpio_port, GPIO_OTYPE_PP, GPIO_OSPEED_LEVEL_0, touch_pad->gpio_pin);
             gpio_bit_write(touch_pad->gpio_port, touch_pad->gpio_pin, RESET);
             
             /* 标记为初始状态 */

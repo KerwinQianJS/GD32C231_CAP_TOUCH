@@ -79,13 +79,13 @@ uint8_t sum_check(uint8_t *data, uint16_t len)
  */
 void on_touch_data_ready(capture_data_t *data)
 {
-    /* 更新所有通道的GPIO指示状态 */
-    for(uint8_t i = 0; i < CAP_TOUCH_CHANNEL_COUNT; i++) {
-        cap_touch_update_gpio_indicator(i, TOUCH_THRESHOLD);
-    }
+    // /* 更新所有通道的GPIO指示状态 */
+    // for(uint8_t i = 0; i < CAP_TOUCH_CHANNEL_COUNT; i++) {
+    //     cap_touch_update_gpio_indicator(i, TOUCH_THRESHOLD);
+    // }
     
-            // cap_test_gpio_toggle();
-            uint8_t send_buf[15] = {0};
+            cap_test_gpio_toggle();
+            static uint8_t send_buf[15] = {0};
     /* 发送数据包头 */
     // usart_send_byte(0xAA);
     // usart_send_byte(0x55);
