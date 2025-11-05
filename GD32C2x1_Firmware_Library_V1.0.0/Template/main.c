@@ -95,6 +95,16 @@ uint16_t sum_check(uint8_t *data, uint16_t len)
     return sum & 0xFFFF; // 0x01 & oxff   0000 0001
 }
 
+static uint16_t cap_calculate_checksum(const uint16_t *data, uint32_t len)
+{
+    uint16_t sum = 0;
+    for (uint32_t i = 0; i < len; i++) {
+        sum += data[i];
+    }
+    return sum;
+}
+
+
 /**
  * @brief 触摸数据就绪回调函数
  *
@@ -119,7 +129,7 @@ void on_touch_data_ready(capture_data_t *data)
     g_dma_send_buffer.data[4] = data->values[4];  /* 低字节 */
     g_dma_send_buffer.data[5] = data->values[5];  /* 低字节 */
 
-    g_dma_send_buffer.checksum = sum_check((uint8_t *)&g_dma_send_buffer.data[0], 12);
+    g_dma_send_buffer.checksum = cap_calculate_checksum(&g_dma_send_buffer.data[0], 6);
 
 
     /* 使用DMA发送 */
