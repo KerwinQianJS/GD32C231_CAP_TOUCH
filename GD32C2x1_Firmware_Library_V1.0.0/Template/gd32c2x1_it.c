@@ -155,28 +155,28 @@ void TIMER0_Channel_IRQHandler(void)
     \param[out] none
     \retval     none
 */
-void TIMER2_IRQHandler(void)
-{
-    if (SET == timer_interrupt_flag_get(TIMER2, TIMER_INT_FLAG_CH0)) {
-        timer_interrupt_flag_clear(TIMER2, TIMER_INT_FLAG_CH0);
-        cap_touch_timer_capture_callback(TIMER2, TIMER_CH_0);
-    }
+// void TIMER2_IRQHandler(void)
+// {
+//     if (SET == timer_interrupt_flag_get(TIMER2, TIMER_INT_FLAG_CH0)) {
+//         timer_interrupt_flag_clear(TIMER2, TIMER_INT_FLAG_CH0);
+//         cap_touch_timer_capture_callback(TIMER2, TIMER_CH_0);
+//     }
     
-    if (SET == timer_interrupt_flag_get(TIMER2, TIMER_INT_FLAG_CH1)) {
-        timer_interrupt_flag_clear(TIMER2, TIMER_INT_FLAG_CH1);
-        cap_touch_timer_capture_callback(TIMER2, TIMER_CH_1);
-    }
+//     if (SET == timer_interrupt_flag_get(TIMER2, TIMER_INT_FLAG_CH1)) {
+//         timer_interrupt_flag_clear(TIMER2, TIMER_INT_FLAG_CH1);
+//         cap_touch_timer_capture_callback(TIMER2, TIMER_CH_1);
+//     }
     
-    if (SET == timer_interrupt_flag_get(TIMER2, TIMER_INT_FLAG_CH2)) {
-        timer_interrupt_flag_clear(TIMER2, TIMER_INT_FLAG_CH2);
-        cap_touch_timer_capture_callback(TIMER2, TIMER_CH_2);
-    }
+//     if (SET == timer_interrupt_flag_get(TIMER2, TIMER_INT_FLAG_CH2)) {
+//         timer_interrupt_flag_clear(TIMER2, TIMER_INT_FLAG_CH2);
+//         cap_touch_timer_capture_callback(TIMER2, TIMER_CH_2);
+//     }
     
-    if (SET == timer_interrupt_flag_get(TIMER2, TIMER_INT_FLAG_CH3)) {
-        timer_interrupt_flag_clear(TIMER2, TIMER_INT_FLAG_CH3);
-        cap_touch_timer_capture_callback(TIMER2, TIMER_CH_3);
-    }
-}
+//     if (SET == timer_interrupt_flag_get(TIMER2, TIMER_INT_FLAG_CH3)) {
+//         timer_interrupt_flag_clear(TIMER2, TIMER_INT_FLAG_CH3);
+//         cap_touch_timer_capture_callback(TIMER2, TIMER_CH_3);
+//     }
+// }
 
 /*!
     \brief      this function handles TIMER15 interrupt

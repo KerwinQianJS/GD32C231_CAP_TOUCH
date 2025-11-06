@@ -398,6 +398,11 @@
               <FileType>1</FileType>
               <FilePath>..\gd32c2x1_it.c</FilePath>
             </File>
+            <File>
+              <FileName>cap_touch.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\cap_touch.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
@@ -941,6 +946,11 @@
               <FileName>gd32c2x1_it.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\gd32c2x1_it.c</FilePath>
+            </File>
+            <File>
+              <FileName>cap_touch.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\cap_touch.c</FilePath>
             </File>
           </Files>
         </Group>

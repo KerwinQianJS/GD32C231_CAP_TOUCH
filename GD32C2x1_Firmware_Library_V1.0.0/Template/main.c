@@ -5,12 +5,12 @@
  * @date 2025-11-01
  */
 
+#include "cap_touch.h"
 #include "gd32c2x1.h"
 #include "systick.h"
-#include "cap_touch.h"
 
 /* 触摸检测阈值 - 根据实际情况调整 */
-#define TOUCH_THRESHOLD 150 /* 触摸阈值，超过此值认为被触摸 */
+#define TOUCH_THRESHOLD      150 /* 触摸阈值，超过此值认为被触摸 */
 
 /* DMA发送缓冲区大小 */
 #define DMA_SEND_BUFFER_SIZE 32
@@ -37,8 +37,10 @@ void usart_send_byte(uint8_t data);
 void usart_send_buffer(uint8_t *buffer, uint16_t length);
 
 /* DMA发送函数 */
-void usart_send_buffer_dma(uint8_t *buffer, uint16_t length);
+void    usart_send_buffer_dma(uint8_t *buffer, uint16_t length);
 uint8_t usart_dma_is_busy(void);
+
+void timer2_cap_touch_config(void);
 
 /**
  * @brief 主函数
@@ -65,21 +67,8 @@ int main(void)
     /* 注册数据就绪回调函数 */
     cap_touch_register_data_ready_callback(on_touch_data_ready);
 
-    while (1)
-    {
-        /* 每秒通过PB6(USART0_TX)发送"1234"字符串 */
-        // usart_send_byte('1');
-        // usart_send_byte('2');
-        // usart_send_byte('3');
-        // usart_send_byte('4');
-        // usart_send_byte('\r');  /* 回车 */
-        // usart_send_byte('\n');  /* 换行 */
-
-        /* 简单延时 (大约1秒，具体时间取决于系统时钟) */
-        // for(volatile uint32_t i = 0; i < 3000000; i++) {
-        //     __NOP();
-        // }
-
+    // timer2_cap_touch_config();
+    while (1) {
         /* 循环调用触摸检测处理函数 */
         cap_touch_process();
     }
@@ -88,11 +77,10 @@ int main(void)
 uint16_t sum_check(uint8_t *data, uint16_t len)
 {
     uint32_t sum = 0;
-    for (uint16_t i = 0; i < len; i++)
-    {
+    for (uint16_t i = 0; i < len; i++) {
         sum += data[i];
     }
-    return sum & 0xFFFF; // 0x01 & oxff   0000 0001
+    return sum & 0xFFFF;  // 0x01 & oxff   0000 0001
 }
 
 static uint16_t cap_calculate_checksum(const uint16_t *data, uint32_t len)
@@ -103,7 +91,6 @@ static uint16_t cap_calculate_checksum(const uint16_t *data, uint32_t len)
     }
     return sum;
 }
-
 
 /**
  * @brief 触摸数据就绪回调函数
@@ -122,15 +109,14 @@ void on_touch_data_ready(capture_data_t *data)
     /* 准备数据到全局DMA缓冲区 */
     g_dma_send_buffer.header = 0xA5A5;
 
-    g_dma_send_buffer.data[0] = data->values[0];  /* 低字节 */
-    g_dma_send_buffer.data[1] = data->values[1];  /* 低字节 */
-    g_dma_send_buffer.data[2] = data->values[2];  /* 低字节 */
-    g_dma_send_buffer.data[3] = data->values[3];  /* 低字节 */
-    g_dma_send_buffer.data[4] = data->values[4];  /* 低字节 */
-    g_dma_send_buffer.data[5] = data->values[5];  /* 低字节 */
+    g_dma_send_buffer.data[0] = data->values[0]; /* 低字节 */
+    g_dma_send_buffer.data[1] = data->values[1]; /* 低字节 */
+    g_dma_send_buffer.data[2] = data->values[2]; /* 低字节 */
+    g_dma_send_buffer.data[3] = data->values[3]; /* 低字节 */
+    g_dma_send_buffer.data[4] = data->values[4]; /* 低字节 */
+    g_dma_send_buffer.data[5] = data->values[5]; /* 低字节 */
 
     g_dma_send_buffer.checksum = cap_calculate_checksum(&g_dma_send_buffer.data[0], 6);
-
 
     /* 使用DMA发送 */
     usart_send_buffer_dma((uint8_t *)&g_dma_send_buffer, 16);
@@ -155,7 +141,7 @@ void usart_config(void)
     /* 配置USART TX GPIO */
     gpio_mode_set(GPIOB, GPIO_MODE_AF, GPIO_PUPD_PULLUP, GPIO_PIN_6);
     gpio_output_options_set(GPIOB, GPIO_OTYPE_PP, GPIO_OSPEED_LEVEL_1, GPIO_PIN_6);
-    
+
     /* 配置USART RX GPIO */
     gpio_mode_set(GPIOB, GPIO_MODE_AF, GPIO_PUPD_PULLUP, GPIO_PIN_7);
     gpio_output_options_set(GPIOB, GPIO_OTYPE_PP, GPIO_OSPEED_LEVEL_1, GPIO_PIN_7);
@@ -179,7 +165,7 @@ void usart_config(void)
     usart_parity_config(USART0, USART_PM_NONE);
     usart_hardware_flow_rts_config(USART0, USART_RTS_DISABLE);
     usart_hardware_flow_cts_config(USART0, USART_CTS_DISABLE);
-    usart_receive_config(USART0, USART_RECEIVE_ENABLE);   /* 使能接收 */
+    usart_receive_config(USART0, USART_RECEIVE_ENABLE); /* 使能接收 */
     usart_transmit_config(USART0, USART_TRANSMIT_ENABLE);
 
     /* 禁用唤醒功能 */
@@ -213,7 +199,7 @@ void dma_config(void)
     /* 配置DMA参数 */
     dma_init_struct.request      = DMA_REQUEST_USART0_TX;          /* USART0_TX请求 */
     dma_init_struct.direction    = DMA_MEMORY_TO_PERIPHERAL;       /* 内存到外设 */
-    dma_init_struct.memory_addr  = (uint32_t)&g_dma_send_buffer;    /* 内存地址 */
+    dma_init_struct.memory_addr  = (uint32_t)&g_dma_send_buffer;   /* 内存地址 */
     dma_init_struct.memory_inc   = DMA_MEMORY_INCREASE_ENABLE;     /* 内存地址自增 */
     dma_init_struct.memory_width = DMA_MEMORY_WIDTH_8BIT;          /* 内存数据宽度8位 */
     dma_init_struct.number       = 0;                              /* 传输数量(稍后设置) */
@@ -225,9 +211,9 @@ void dma_config(void)
     dma_init(DMA_CH0, &dma_init_struct);
 
     /* 配置DMA模式 */
-    dma_circulation_disable(DMA_CH0);           /* 非循环模式 */
-    dma_memory_to_memory_disable(DMA_CH0);      /* 非内存到内存模式 */
-    
+    dma_circulation_disable(DMA_CH0);      /* 非循环模式 */
+    dma_memory_to_memory_disable(DMA_CH0); /* 非内存到内存模式 */
+
     /* 禁用DMAMUX同步模式 */
     dmamux_synchronization_disable(DMAMUX_MUXCH0);
 }
@@ -265,6 +251,63 @@ void usart_send_buffer_dma(uint8_t *buffer, uint16_t length)
 uint8_t usart_dma_is_busy(void)
 {
     return (dma_flag_get(DMA_CH0, DMA_FLAG_FTF) == RESET) ? 1 : 0;
+}
+
+/**
+ * @brief 配置定时器2为167us周期定时器，用于触摸检测
+ *
+ * 计算过程：
+ * 系统时钟: 48MHz
+ * 预分频: 48-1 = 47 (48MHz / 48 = 1MHz, 每计数1us)
+ * 周期: 167us -> 计数值 = 167-1 = 166
+ */
+void timer2_cap_touch_config(void)
+{
+    timer_parameter_struct timer_initpara;
+
+    /* 使能定时器2时钟 */
+    rcu_periph_clock_enable(RCU_TIMER2);
+
+    /* 初始化定时器2 */
+    timer_deinit(TIMER2);
+
+    /* 配置定时器基本参数 */
+    timer_initpara.prescaler         = 47; /* 48MHz / 48 = 1MHz，每计数1us */
+    timer_initpara.alignedmode       = TIMER_COUNTER_EDGE;
+    timer_initpara.counterdirection  = TIMER_COUNTER_UP;
+    timer_initpara.period            = 166; /* 167us周期 (167-1) */
+    timer_initpara.clockdivision     = TIMER_CKDIV_DIV1;
+    timer_initpara.repetitioncounter = 0;
+    timer_init(TIMER2, &timer_initpara);
+
+    /* 清除中断标志 */
+    timer_interrupt_flag_clear(TIMER2, TIMER_INT_FLAG_UP);
+
+    /* 使能更新中断 */
+    timer_interrupt_enable(TIMER2, TIMER_INT_UP);
+
+    /* 配置NVIC中断优先级 */
+    nvic_irq_enable(TIMER2_IRQn, 5); /* 优先级5，低于一般任务 */
+
+    /* 启动定时器 */
+    timer_enable(TIMER2);
+}
+
+/**
+ * @brief 定时器2中断处理函数 - 167us周期触摸检测
+ *
+ * 此函数会在每个167us周期被自动调用，执行触摸检测处理
+ */
+void TIMER2_IRQHandler(void)
+{
+    /* 检查定时器更新中断标志 */
+    if (timer_interrupt_flag_get(TIMER2, TIMER_INT_FLAG_UP) != RESET) {
+        /* 清除中断标志 */
+        timer_interrupt_flag_clear(TIMER2, TIMER_INT_FLAG_UP);
+
+        /* 调用触摸检测处理函数 */
+        cap_touch_process();
+    }
 }
 
 /* Note: fputc is defined in gd32c231c_eval.c */

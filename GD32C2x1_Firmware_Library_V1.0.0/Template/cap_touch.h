@@ -13,19 +13,13 @@
 #include <stdint.h>
 
 /** 触摸通道数量定义 */
-#define CAP_TOUCH_CHANNEL_COUNT 6  /* 启用6个通道 */
+#define CAP_TOUCH_CHANNEL_COUNT 6 /* 启用6个通道 */
 
 /** 返回值定义 */
-typedef enum {
-    CAP_OK = 0,
-    CAP_ERROR = 1
-} cap_err_t;
+typedef enum { CAP_OK = 0, CAP_ERROR = 1 } cap_err_t;
 
 /** 布尔类型定义 */
-typedef enum {
-    CAP_FALSE = 0,
-    CAP_TRUE = 1
-} cap_bool_t;
+typedef enum { CAP_FALSE = 0, CAP_TRUE = 1 } cap_bool_t;
 
 #pragma pack(1)
 /**
@@ -85,26 +79,6 @@ capture_data_t *cap_touch_get_data_packet(void);
 void cap_touch_register_data_ready_callback(cap_touch_data_ready_callback_t callback);
 
 /**
- * @brief 从FIFO中读取触摸数据
- *
- * @param data_buffer 存储读取数据的缓冲区指针
- * @return cap_err_t CAP_OK:成功读取一个数据包, CAP_ERROR:FIFO为空或读取失败
- */
-cap_err_t cap_touch_fifo_read(capture_data_t *data_buffer);
-
-/**
- * @brief 获取FIFO中可读取的数据包数量
- *
- * @return uint16_t 可读取的完整数据包数量
- */
-uint16_t cap_touch_fifo_get_count(void);
-
-/**
- * @brief 清空触摸数据FIFO
- */
-void cap_touch_fifo_clear(void);
-
-/**
  * @brief SysTick中断处理函数 - 用于时间戳
  * 应在systick中断中每1ms调用一次
  */
@@ -112,27 +86,27 @@ void cap_touch_systick_handler(void);
 
 /**
  * @brief 初始化触摸指示GPIO (PB0-PB5)
- * 
+ *
  * 当检测到触摸时，对应的GPIO会输出高电平
  */
 void cap_touch_gpio_indicator_init(void);
 
 /**
  * @brief 更新触摸指示GPIO状态
- * 
+ *
  * @param channel 通道号(0-5)
  * @param threshold 触摸检测阈值
- * 
+ *
  * 当通道值超过阈值时，对应GPIO输出高电平，否则输出低电平
  */
 void cap_touch_update_gpio_indicator(uint8_t channel, uint32_t threshold);
 
 /**
  * @brief 定时器输入捕获中断回调函数
- * 
+ *
  * @param timer_periph 定时器外设
  * @param channel 定时器通道
- * 
+ *
  * 当定时器捕获到触摸板充电完成时调用此函数
  * 需要在对应的定时器中断处理函数中调用
  */
