@@ -18,8 +18,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* 放电延时(单位:一个NOP) 500个NOP约10微秒 (48MHz系统时钟) */
-
 /** 捕获超时时间(定时器计数值)
  * 8MHz定时器，每计数0.125us
  * 0xFFFF(65535) = 8.2ms - 太长！
@@ -27,7 +25,7 @@
  * 0x1FFF(8191)  = 1.0ms - 较快
  * 0x0FFF(4095)  = 0.5ms - 最快但可能不稳定
  */
-#define CAPTURE_TIMEOUT 0x1FFF /* 2ms超时，平衡速度和稳定性 */
+#define CAPTURE_TIMEOUT 0x7FFF /* 2ms超时，平衡速度和稳定性 */
 
 /**
  * @brief 触摸传感器状态枚举
@@ -43,17 +41,16 @@ typedef enum {
  * @brief 触摸传感器参数结构体
  */
 typedef struct {
-    uint32_t          gpio_port;      /*!< GPIO端口(GPIOA/GPIOB/GPIOC等) */
-    uint32_t          timer;          /*!< 定时器外设(TIMER0/TIMER2等) */
-    uint32_t          rcu_gpio;       /*!< GPIO时钟 */
-    uint32_t          rcu_timer;      /*!< 定时器时钟 */
-    uint32_t          timer_channel;  /*!< 定时器通道 */
-    uint32_t          timer_int_flag; /*!< 定时器中断标志 */
-    uint32_t          gpio_pin;       /*!< GPIO引脚号 */
-    uint32_t          gpio_af;        /*!< GPIO复用功能 */
-    IRQn_Type         timer_irq;      /*!< 定时器IRQ编号 */
-    cap_touch_state_t state;          /*!< 当前状态 */
-    uint8_t           discharge_cnt;  /*!< 放电计数器 */
+    uint32_t                   gpio_port;      /*!< GPIO端口(GPIOA/GPIOB/GPIOC等) */
+    uint32_t                   timer;          /*!< 定时器外设(TIMER0/TIMER2等) */
+    uint32_t                   rcu_gpio;       /*!< GPIO时钟 */
+    uint32_t                   rcu_timer;      /*!< 定时器时钟 */
+    uint32_t                   timer_channel;  /*!< 定时器通道 */
+    uint32_t                   timer_int_flag; /*!< 定时器中断标志 */
+    uint32_t                   gpio_pin;       /*!< GPIO引脚号 */
+    uint32_t                   gpio_af;        /*!< GPIO复用功能 */
+    IRQn_Type                  timer_irq;      /*!< 定时器IRQ编号 */
+    volatile cap_touch_state_t state;          /*!< 当前状态 */
 } cap_touch_pad_t;
 
 /**
@@ -83,8 +80,8 @@ static const uint32_t g_indicator_pins[6] = {
  * Channel 1: PA1  - TIMER0_CH1  (AF2) - TOUCH_IN2
  * Channel 2: PA2  - TIMER0_CH2  (AF2) - TOUCH_IN3
  * Channel 3: PA3  - TIMER0_CH3  (AF2) - TOUCH_IN4
- * Channel 4: PA6  - TIMER15_CH0 (AF5) - TOUCH_IN5
- * Channel 5: PA7  - TIMER16_CH0 (AF5) - TOUCH_IN6
+ * Channel 4: PA6  - TIMER2_CH0  (AF1) - TOUCH_IN5
+ * Channel 5: PA7  - TIMER2_CH1  (AF1) - TOUCH_IN6
  */
 cap_touch_pad_t g_touch_pads[CAP_TOUCH_CHANNEL_COUNT] = {
     [0] = {.gpio_pin       = GPIO_PIN_0,
@@ -130,22 +127,22 @@ cap_touch_pad_t g_touch_pads[CAP_TOUCH_CHANNEL_COUNT] = {
     [4] = {.gpio_pin       = GPIO_PIN_6,
            .gpio_port      = GPIOA,
            .rcu_gpio       = RCU_GPIOA,
-           .timer          = TIMER15,
-           .rcu_timer      = RCU_TIMER15,
+           .timer          = TIMER2,
+           .rcu_timer      = RCU_TIMER2,
            .timer_channel  = TIMER_CH_0,
            .timer_int_flag = TIMER_INT_FLAG_CH0,
-           .timer_irq      = TIMER15_IRQn,
-           .gpio_af        = GPIO_AF_5,
+           .timer_irq      = TIMER2_IRQn,
+           .gpio_af        = GPIO_AF_1,
            .state          = CAP_STATE_INIT},
     [5] = {.gpio_pin       = GPIO_PIN_7,
            .gpio_port      = GPIOA,
            .rcu_gpio       = RCU_GPIOA,
-           .timer          = TIMER16,
-           .rcu_timer      = RCU_TIMER16,
-           .timer_channel  = TIMER_CH_0,
-           .timer_int_flag = TIMER_INT_FLAG_CH0,
-           .timer_irq      = TIMER16_IRQn,
-           .gpio_af        = GPIO_AF_5,
+           .timer          = TIMER2,
+           .rcu_timer      = RCU_TIMER2,
+           .timer_channel  = TIMER_CH_1,
+           .timer_int_flag = TIMER_INT_FLAG_CH1,
+           .timer_irq      = TIMER2_IRQn,
+           .gpio_af        = GPIO_AF_1,
            .state          = CAP_STATE_INIT}
 };
 
@@ -161,11 +158,63 @@ static cap_touch_data_ready_callback_t g_data_ready_callback = NULL;
 /** 系统时间戳(微秒) */
 static volatile uint64_t g_system_us = 0;
 
+/** 定时器输入捕获参数配置(全局静态,只需初始化一次) */
+static timer_ic_parameter_struct g_timer_icinitpara = {.icpolarity  = TIMER_IC_POLARITY_RISING,
+                                                       .icselection = TIMER_IC_SELECTION_DIRECTTI,
+                                                       .icprescaler = TIMER_IC_PSC_DIV1,
+                                                       /* 硬件数字滤波：0x03表示轻度滤波，适合低噪声环境
+                                                        * 采样频率 = 定时器时钟频率 / (prescaler * filter)
+                                                        * 0x00 = 无滤波
+                                                        * 0x01-0x03 = 轻度滤波（推荐用于低噪声环境）
+                                                        * 0x04-0x07 = 中度滤波（推荐用于中等噪声环境）
+                                                        * 0x08-0x0F = 强滤波（用于高噪声环境，会略微降低响应速度）
+                                                        */
+                                                       .icfilter = 0x01};
+
 /* 私有函数声明 */
 static void cap_touch_pad_init(cap_touch_pad_t *touch_pad);
 static void cap_touch_pad_discharge(cap_touch_pad_t *touch_pad);
 static void cap_touch_pad_start_capture(cap_touch_pad_t *touch_pad);
+static void cap_touch_pad_stop_capture(cap_touch_pad_t *touch_pad);
 static void cap_touch_scan_next(void);
+
+/**
+ * @brief 内联函数：结束捕获并准备下一个通道
+ * @param timer_periph 定时器外设
+ * @param touch_pad 当前触摸板指针
+ *
+ * 此函数执行以下操作：
+ * 1. 检查状态防止重入
+ * 2. 禁用定时器所有中断
+ * 3. 清除定时器所有中断标志
+ * 4. 配置GPIO为输出模式（放电）
+ * 5. 设置状态为DISCHARGE
+ * 6. 扫描下一个通道
+ */
+static inline void cap_touch_finish_capture(uint32_t timer_periph, cap_touch_pad_t *touch_pad)
+{
+    /* 防止重入：如果状态已经不是 WAIT_CAPTURE，直接返回 */
+    if (touch_pad->state != CAP_STATE_WAIT_CAPTURE) { return; }
+
+    /* 立即改变状态，防止后续重入 */
+    touch_pad->state = CAP_STATE_DISCHARGE;
+
+    /* 禁用该定时器捕获中断 */
+    timer_interrupt_disable(timer_periph, touch_pad->timer_int_flag);
+
+    /* 清除该定时器中断标志 */
+    timer_interrupt_flag_clear(timer_periph, touch_pad->timer_int_flag);
+
+    /* 禁用捕获通道 */
+    timer_channel_output_state_config(timer_periph, touch_pad->timer_channel, TIMER_CCX_DISABLE);
+
+    /* 配置GPIO为输出模式（放电） */
+    gpio_bit_write(touch_pad->gpio_port, touch_pad->gpio_pin, RESET);
+    gpio_mode_set(touch_pad->gpio_port, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, touch_pad->gpio_pin);
+
+    /* 扫描下一个通道 */
+    cap_touch_scan_next();
+}
 
 /**
  * @brief 初始化触摸板为GPIO输出模式(放电准备)
@@ -173,14 +222,13 @@ static void cap_touch_scan_next(void);
 static void cap_touch_pad_init(cap_touch_pad_t *touch_pad)
 {
     /* 配置GPIO为输出模式，输出低电平进行放电 */
+    gpio_bit_write(touch_pad->gpio_port, touch_pad->gpio_pin, RESET);
     gpio_mode_set(touch_pad->gpio_port, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, touch_pad->gpio_pin);
     /* 使用最低速度，降低噪声 */
-    gpio_output_options_set(touch_pad->gpio_port, GPIO_OTYPE_PP, GPIO_OSPEED_LEVEL_1, touch_pad->gpio_pin);
-    gpio_bit_write(touch_pad->gpio_port, touch_pad->gpio_pin, RESET);
+    gpio_output_options_set(touch_pad->gpio_port, GPIO_OTYPE_PP, GPIO_OSPEED_LEVEL_0, touch_pad->gpio_pin);
 
     /* 进入放电状态 */
-    touch_pad->state         = CAP_STATE_DISCHARGE;
-    touch_pad->discharge_cnt = 0;
+    touch_pad->state = CAP_STATE_DISCHARGE;
 }
 
 /**
@@ -192,38 +240,56 @@ static void cap_touch_pad_start_capture(cap_touch_pad_t *touch_pad)
     touch_pad->state = CAP_STATE_WAIT_CAPTURE;
     // 先设置状态，再配置定时器，因为可能中断马上就来
 
-    timer_ic_parameter_struct timer_icinitpara;
+    // timer_disable(touch_pad->timer);
+    /* 1. 禁用定时器输入捕获通道（配置前必须禁用） */
+    timer_channel_output_state_config(touch_pad->timer, touch_pad->timer_channel, TIMER_CCX_DISABLE);
 
-    /* 1. 先配置定时器输入捕获参数 */
-    timer_icinitpara.icpolarity  = TIMER_IC_POLARITY_RISING;
-    timer_icinitpara.icselection = TIMER_IC_SELECTION_DIRECTTI;
-    timer_icinitpara.icprescaler = TIMER_IC_PSC_DIV1;
-    /* 硬件数字滤波：0x05表示需要5个连续采样点一致才认为信号有效
-     * 采样频率 = 定时器时钟频率 / (prescaler * filter)
-     * 0x00 = 无滤波
-     * 0x01-0x03 = 轻度滤波（推荐用于低噪声环境）
-     * 0x04-0x07 = 中度滤波（推荐用于中等噪声环境）
-     * 0x08-0x0F = 强滤波（用于高噪声环境，会略微降低响应速度）
-     */
-    timer_icinitpara.icfilter = 0x03; /* 硬件滤波，过滤掉毛刺 */
-    timer_input_capture_config(touch_pad->timer, touch_pad->timer_channel, &timer_icinitpara);
-
-    /* 2. 清除定时器计数器 */
+    /* 2. 清零计数器 */
     timer_counter_value_config(touch_pad->timer, 0);
 
-    /* 3. 清除中断标志 */
+    /* 3. 配置定时器输入捕获参数(使用全局配置) */
+    timer_input_capture_config(touch_pad->timer, touch_pad->timer_channel, &g_timer_icinitpara);
+
+    /* 4. 清除中断标志（清除可能残留的标志） */
     timer_interrupt_flag_clear(touch_pad->timer, touch_pad->timer_int_flag);
+    // timer_interrupt_flag_clear(touch_pad->timer, TIMER_INT_FLAG_UP);
 
+    /* 5. 使能定时器中断（捕获中断 + 更新中断） */
     timer_interrupt_enable(touch_pad->timer, touch_pad->timer_int_flag);
+    // timer_interrupt_enable(touch_pad->timer, TIMER_INT_UP);
 
-    /* 5. 使能定时器输入捕获通道 */
+    // timer_update_source_config(touch_pad->timer, TIMER_UPDATE_SRC_GLOBAL);
+
+    /* 6. 使能定时器输入捕获通道（此时GPIO和定时器都已准备好）*/
     timer_channel_output_state_config(touch_pad->timer, touch_pad->timer_channel, TIMER_CCX_ENABLE);
 
-    /* 6. 最后配置GPIO（此时定时器已准备好捕获上升沿）*/
-    gpio_mode_set(touch_pad->gpio_port, GPIO_MODE_AF, GPIO_PUPD_NONE, touch_pad->gpio_pin);
-    /* 降低GPIO速度，减少高频噪声耦合 */
-    gpio_output_options_set(touch_pad->gpio_port, GPIO_OTYPE_PP, GPIO_OSPEED_LEVEL_1, touch_pad->gpio_pin);
+    // timer_enable(touch_pad->timer);
+
+    /* 7. 配置GPIO为AF模式（在通道使能后立即配置GPIO）*/
+    /* 注意：外部已有上拉电阻，GPIO无需内部上拉 */
+    gpio_bit_write(touch_pad->gpio_port, touch_pad->gpio_pin, RESET); /* 初始为低电平 */
     gpio_af_set(touch_pad->gpio_port, touch_pad->gpio_af, touch_pad->gpio_pin);
+    gpio_mode_set(touch_pad->gpio_port, GPIO_MODE_AF, GPIO_PUPD_NONE, touch_pad->gpio_pin);
+}
+
+/**
+ * @brief 停止定时器输入捕获
+ */
+static void cap_touch_pad_stop_capture(cap_touch_pad_t *touch_pad)
+{
+    /* 1. 禁用定时器中断（捕获中断 + 更新中断） */
+    timer_interrupt_disable(touch_pad->timer, touch_pad->timer_int_flag);
+    // timer_interrupt_disable(touch_pad->timer, TIMER_INT_UP);
+
+    /* 2. 清除该定时器所有中断标志 */
+    timer_interrupt_flag_clear(touch_pad->timer, touch_pad->timer_int_flag);
+    // timer_interrupt_flag_clear(touch_pad->timer, TIMER_INT_FLAG_UP);
+
+    /* 3. 禁用该定时器所有通道的输入捕获（防止通道间干扰） */
+    timer_channel_output_state_config(touch_pad->timer, touch_pad->timer_channel, TIMER_CCX_DISABLE);
+
+    /* 4. 清除定时器计数器 */
+    timer_counter_value_config(touch_pad->timer, 0);
 }
 
 /**
@@ -231,7 +297,7 @@ static void cap_touch_pad_start_capture(cap_touch_pad_t *touch_pad)
  */
 static void cap_touch_scan_next(void)
 {
-#if 0
+#if 1
     g_current_channel = (g_current_channel + 1) % CAP_TOUCH_CHANNEL_COUNT;
 
     /* 当完成一轮6个通道的采集后 */
@@ -255,30 +321,20 @@ void cap_touch_timer_capture_callback(uint32_t timer_periph, uint16_t channel)
 {
     uint8_t i = g_current_channel;
 
-    /* 标记当前通道回到初始状态 */
-    g_touch_pads[i].state = CAP_STATE_DISCHARGE;
+    /* 条件1: 检查是否是当前通道的定时器 */
+    if (g_touch_pads[i].timer != timer_periph) { return; }
 
-    /* 检查是否是当前通道的中断 */
-    //   if (g_touch_pads[i].timer == timer_periph &&
-    //       g_touch_pads[i].timer_channel == channel) {
+    /* 条件2: 检查定时器通道是否匹配 */
+    if (g_touch_pads[i].timer_channel != channel) { return; }
 
-    /* 读取捕获值 */
+    /* 条件3: 检查状态是否为等待捕获（防止重复处理） */
+    if (g_touch_pads[i].state != CAP_STATE_WAIT_CAPTURE) { return; }
+
+    /* 所有条件满足，读取并保存捕获值 */
     g_touch_data.values[i] = timer_channel_capture_value_register_read(timer_periph, channel);
 
-    /* 禁用定时器输入捕获通道 */
-    timer_channel_output_state_config(timer_periph, channel, TIMER_CCX_DISABLE);
-
-    // /* 禁用中断 */
-    timer_interrupt_disable(timer_periph, g_touch_pads[i].timer_int_flag);
-
-    /* ⚠️ 关键修复：先将当前通道GPIO切换为输出低电平进行放电 */
-    gpio_mode_set(g_touch_pads[i].gpio_port, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, g_touch_pads[i].gpio_pin);
-    gpio_output_options_set(g_touch_pads[i].gpio_port, GPIO_OTYPE_PP, GPIO_OSPEED_LEVEL_1, g_touch_pads[i].gpio_pin);
-    gpio_bit_write(g_touch_pads[i].gpio_port, g_touch_pads[i].gpio_pin, RESET);
-
-    /* 扫描下一个通道 */
-    cap_touch_scan_next();
-    //   }
+    /* 结束捕获并准备下一个通道 */
+    cap_touch_finish_capture(timer_periph, &g_touch_pads[i]);
 }
 
 /**
@@ -291,19 +347,27 @@ static cap_bool_t cap_touch_process_pad(cap_touch_pad_t *touch_pad)
 
     case CAP_STATE_DISCHARGE: cap_touch_pad_start_capture(touch_pad); return CAP_FALSE;
 
-    case CAP_STATE_WAIT_CAPTURE:
-
-        /* 检查是否超时（降低检查频率以减少CPU占用） */
-        if (timer_counter_read(touch_pad->timer) >= CAPTURE_TIMEOUT) {
-            //  否则保持上次的值不变
-            timer_interrupt_disable(touch_pad->timer, touch_pad->timer_int_flag);
-            timer_counter_value_config(touch_pad->timer, 0);
-            timer_channel_output_state_config(touch_pad->timer, touch_pad->timer_channel, TIMER_CCX_DISABLE);
-
-            cap_touch_pad_init(touch_pad);
-            cap_touch_scan_next();
+    case CAP_STATE_WAIT_CAPTURE: {
+        /* 软件超时检查(作为硬件中断的备份) */
+        uint8_t  i       = g_current_channel;
+        uint32_t counter = timer_counter_read(touch_pad->timer);
+        
+        /* 多重条件判断，确保超时判断准确 */
+        /* 条件1: 定时器计数器达到或超过超时值 */
+        /* 条件2: 当前通道指针匹配 */
+        /* 条件3: 状态仍为等待捕获 */
+        if (counter >= CAPTURE_TIMEOUT && 
+            &g_touch_pads[i] == touch_pad && 
+            touch_pad->state == CAP_STATE_WAIT_CAPTURE) {
+            
+            /* 所有条件满足，设置超时值 */
+            g_touch_data.values[i] = CAPTURE_TIMEOUT;
+            
+            /* 软件超时：完成当前通道并切换到下一个 */
+            cap_touch_finish_capture(touch_pad->timer, touch_pad);
         }
         return CAP_FALSE;
+    }
 
     default: touch_pad->state = CAP_STATE_INIT; return CAP_FALSE;
     }
@@ -330,15 +394,18 @@ static void timer_config(uint32_t timer_periph)
     timer_deinit(timer_periph);
 
     /* 配置定时器基本参数 */
-    timer_initpara.prescaler         = 1; /* 48MHz / 6 = 8MHz，每计数0.125us */
+    timer_initpara.prescaler         = 5; /* 48MHz，每计数约0.021us */
     timer_initpara.alignedmode       = TIMER_COUNTER_EDGE;
     timer_initpara.counterdirection  = TIMER_COUNTER_UP;
-    timer_initpara.period            = 0xFFFF;
+    timer_initpara.period            = 0xFFFF; /* 使用完整16位范围，溢出时间约1.37ms */
     timer_initpara.clockdivision     = TIMER_CKDIV_DIV1;
     timer_initpara.repetitioncounter = 0;
     timer_init(timer_periph, &timer_initpara);
 
-    /* 使能定时器 */
+    /* 配置更新源为GLOBAL模式，允许捕获中断和更新中断同时工作 */
+    // timer_update_source_config(timer_periph, TIMER_UPDATE_SRC_GLOBAL);
+
+    /* 启动定时器 */
     timer_enable(timer_periph);
 }
 
@@ -353,21 +420,20 @@ void cap_touch_init(void)
 
     /* 使能定时器时钟 */
     rcu_periph_clock_enable(RCU_TIMER0);
-    rcu_periph_clock_enable(RCU_TIMER15);
-    rcu_periph_clock_enable(RCU_TIMER16);
+    rcu_periph_clock_enable(RCU_TIMER2);
 
     /* 配置定时器 */
     timer_config(TIMER0);
-    timer_config(TIMER15);
-    timer_config(TIMER16);
+    timer_config(TIMER2);
 
     /* 配置NVIC */
     nvic_irq_enable(TIMER0_Channel_IRQn, 3);
-    nvic_irq_enable(TIMER15_IRQn, 3);
-    nvic_irq_enable(TIMER16_IRQn, 3);
+    nvic_irq_enable(TIMER2_IRQn, 3);
 
     /* 初始化第一个通道 */
-    cap_touch_pad_init(&g_touch_pads[0]);
+    for (uint8_t i = 0; i < CAP_TOUCH_CHANNEL_COUNT; i++) {
+        cap_touch_pad_init(&g_touch_pads[i]);
+    }
 }
 
 /**
@@ -400,7 +466,7 @@ void cap_touch_gpio_indicator_init(void)
     /* 配置PB0-PB5为推挽输出模式 */
     for (uint8_t i = 0; i < 6; i++) {
         gpio_mode_set(GPIOB, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, g_indicator_pins[i]);
-        gpio_output_options_set(GPIOB, GPIO_OTYPE_PP, GPIO_OSPEED_LEVEL_1, g_indicator_pins[i]);
+        gpio_output_options_set(GPIOB, GPIO_OTYPE_PP, GPIO_OSPEED_LEVEL_0, g_indicator_pins[i]);
         gpio_bit_write(GPIOB, g_indicator_pins[i], RESET); /* 初始为低电平 */
     }
 }

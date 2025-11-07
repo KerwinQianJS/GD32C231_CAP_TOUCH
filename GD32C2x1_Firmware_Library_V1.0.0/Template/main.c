@@ -40,7 +40,7 @@ void usart_send_buffer(uint8_t *buffer, uint16_t length);
 void    usart_send_buffer_dma(uint8_t *buffer, uint16_t length);
 uint8_t usart_dma_is_busy(void);
 
-void timer2_cap_touch_config(void);
+void timer13_cap_touch_config(void);
 
 /**
  * @brief 主函数
@@ -52,11 +52,14 @@ int main(void)
     /* 配置系统滴答定时器 */
     systick_config();
 
-    /* 配置DMA */
+    // /* 配置DMA */
     dma_config();
 
-    /* 配置USART用于数据输出 */
+    // /* 配置USART用于数据输出 */
     usart_config();
+
+    /* 注册数据就绪回调函数 */
+    cap_touch_register_data_ready_callback(on_touch_data_ready);
 
     /* 初始化电容触摸模块 */
     cap_touch_init();
@@ -64,13 +67,24 @@ int main(void)
     /* 初始化触摸指示GPIO (PB0-PB5) */
     cap_touch_gpio_indicator_init();
 
-    /* 注册数据就绪回调函数 */
-    cap_touch_register_data_ready_callback(on_touch_data_ready);
+    /* 禁用 SysTick 中断 (直接操作寄存器) */
+    SysTick->CTRL &= ~SysTick_CTRL_TICKINT_Msk; /* 清除TICKINT位，禁用SysTick中断 */
 
-    // timer2_cap_touch_config();
+    /* 配置TIMER13 (无中断，轮询模式) */
+    timer13_cap_touch_config();
+
     while (1) {
-        /* 循环调用触摸检测处理函数 */
-        cap_touch_process();
+        /* 轮询检测TIMER13更新事件标志 */
+        if (timer_flag_get(TIMER13, TIMER_FLAG_UP) != RESET) {
+            /* 清除标志 */
+            timer_flag_clear(TIMER13, TIMER_FLAG_UP);
+
+            /* 执行触摸检测处理函数 */
+            cap_touch_process();
+        }
+
+        /* 可选: 进入低功耗等待中断 (注意:轮询模式下不建议使用WFI) */
+        // __WFI();
     }
 }
 
@@ -254,22 +268,23 @@ uint8_t usart_dma_is_busy(void)
 }
 
 /**
- * @brief 配置定时器2为167us周期定时器，用于触摸检测
+ * @brief 配置定时器13为167us周期定时器，用于触摸检测
  *
+ * 工作模式: 轮询模式(无中断)
  * 计算过程：
  * 系统时钟: 48MHz
  * 预分频: 48-1 = 47 (48MHz / 48 = 1MHz, 每计数1us)
  * 周期: 167us -> 计数值 = 167-1 = 166
  */
-void timer2_cap_touch_config(void)
+void timer13_cap_touch_config(void)
 {
     timer_parameter_struct timer_initpara;
 
-    /* 使能定时器2时钟 */
-    rcu_periph_clock_enable(RCU_TIMER2);
+    /* 使能定时器13时钟 */
+    rcu_periph_clock_enable(RCU_TIMER13);
 
-    /* 初始化定时器2 */
-    timer_deinit(TIMER2);
+    /* 初始化定时器13 */
+    timer_deinit(TIMER13);
 
     /* 配置定时器基本参数 */
     timer_initpara.prescaler         = 47; /* 48MHz / 48 = 1MHz，每计数1us */
@@ -278,36 +293,17 @@ void timer2_cap_touch_config(void)
     timer_initpara.period            = 166; /* 167us周期 (167-1) */
     timer_initpara.clockdivision     = TIMER_CKDIV_DIV1;
     timer_initpara.repetitioncounter = 0;
-    timer_init(TIMER2, &timer_initpara);
+    timer_init(TIMER13, &timer_initpara);
 
-    /* 清除中断标志 */
-    timer_interrupt_flag_clear(TIMER2, TIMER_INT_FLAG_UP);
+    /* 清除更新标志 */
+    timer_flag_clear(TIMER13, TIMER_FLAG_UP);
 
-    /* 使能更新中断 */
-    timer_interrupt_enable(TIMER2, TIMER_INT_UP);
+    /* 不使能中断，采用轮询模式 */
+    /* timer_interrupt_enable(TIMER13, TIMER_INT_UP); */ /* 已禁用 */
 
-    /* 配置NVIC中断优先级 */
-    nvic_irq_enable(TIMER2_IRQn, 5); /* 优先级5，低于一般任务 */
+    /* 不配置NVIC */
+    /* nvic_irq_enable(TIMER13_IRQn, 5); */ /* 已禁用 */
 
     /* 启动定时器 */
-    timer_enable(TIMER2);
+    timer_enable(TIMER13);
 }
-
-/**
- * @brief 定时器2中断处理函数 - 167us周期触摸检测
- *
- * 此函数会在每个167us周期被自动调用，执行触摸检测处理
- */
-void TIMER2_IRQHandler(void)
-{
-    /* 检查定时器更新中断标志 */
-    if (timer_interrupt_flag_get(TIMER2, TIMER_INT_FLAG_UP) != RESET) {
-        /* 清除中断标志 */
-        timer_interrupt_flag_clear(TIMER2, TIMER_INT_FLAG_UP);
-
-        /* 调用触摸检测处理函数 */
-        cap_touch_process();
-    }
-}
-
-/* Note: fputc is defined in gd32c231c_eval.c */

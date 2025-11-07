@@ -112,5 +112,13 @@ void cap_touch_update_gpio_indicator(uint8_t channel, uint32_t threshold);
  */
 void cap_touch_timer_capture_callback(uint32_t timer_periph, uint16_t channel);
 
+/**
+ * @brief 定时器更新中断回调函数（超时处理）
+ * 
+ * 当定时器计数到最大值（溢出）时调用此函数，表示捕获超时
+ * 需要在对应的定时器中断处理函数中调用
+ */
+void cap_touch_timer_update_callback(uint32_t timer_periph);
+
 void cap_test_gpio_toggle(void);
 #endif /* CAP_TOUCH_H_ */
